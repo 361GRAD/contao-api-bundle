@@ -8,6 +8,7 @@
 
 namespace HeimrichHannot\ApiBundle\ApiResource;
 
+use Contao\ContentModel;
 use Contao\Controller;
 use Contao\CoreBundle\Framework\FrameworkAwareTrait;
 use Contao\Model;
@@ -25,7 +26,7 @@ abstract class EntityResource implements ResourceInterface
     protected $resourceName;
     protected $modelClass;
     protected $verboseName;
-
+    protected $showContent = false;
     /**
      * EntityResource constructor.
      */
@@ -130,10 +131,18 @@ abstract class EntityResource implements ResourceInterface
             $options['offset'] = $offset;
         }
 
+        if (0 < (int) $request->query->get('content')) {
+            $this->showContent = true;
+        }
+
         $columns = [];
 
         $this->hideUnpublishedInstances($user, $columns);
         $this->applyWhereSql($user, $columns);
+
+        if(count($columns)< 1) {
+            $columns = null;
+        }
 
         if (1 > ($total = $adapter->countBy($columns))) {
             return [
@@ -159,7 +168,7 @@ abstract class EntityResource implements ResourceInterface
     public function show($id, Request $request, UserInterface $user): ?array
     {
         $this->setLanguage($user);
-
+        $this->showContent = true;
         $id = (int) $id;
 
         /** @var Model $adapter */
@@ -258,6 +267,28 @@ abstract class EntityResource implements ResourceInterface
             $output[$field] = $this->container->get('huh.utils.form')->prepareSpecialValueForOutput(
                 $field, $value, $dc
             );
+        }
+
+        if($this->showContent) {
+            if (in_array('tl_content', $dca['config']['ctable'])) {
+
+                if (($objContentElements = ContentModel::findBy(['pid=?', 'ptable=?'], [$instance->id, $instance::getTable()])) === null) {
+                    return $output;
+                }
+
+                $dc = $this->container->get('huh.utils.dca')->getDCTable($instance::getTable(), $instance);
+
+                while ($objContentElements->next()) {
+                    $arrContentElements = [];
+                    foreach($objContentElements->current()->row() as $field => $value) {
+                        $arrContentElements[$field] = $this->container->get('huh.utils.form')->prepareSpecialValueForOutput(
+                            $field, $value, $dc
+                        );
+                    }
+
+                    $output['content'][] = $arrContentElements;
+                }
+            }
         }
 
         return $output;
